@@ -19,7 +19,7 @@ import static de.bytefish.jsqlserverbulkinsert.SqlServerBulkInsert.*;
 public class SqlServerBulkInsertAllTypesTest {
 
     private static final String CONNECTION_STRING =
-            "jdbc:sqlserver://localhost:1433;databaseName=master;user=sa;password=YourStrong!Passw0rd;encrypt=true;trustServerCertificate=true;";
+            "jdbc:sqlserver://localhost:14330;databaseName=master;user=sa;password=MyStrongPassw0rd;trustServerCertificate=true;";
 
     record AllTypesEntity(
             UUID id,
@@ -60,9 +60,6 @@ public class SqlServerBulkInsertAllTypesTest {
             OffsetDateTime dateTimeOffsetVal
     ) {}
 
-    // =========================================================================
-    // 2. MAPPER KONFIGURATION FÜR ALLE TYPEN
-    // =========================================================================
     private static final SqlServerMapper<AllTypesEntity> MAPPER = SqlServerMapper.forClass(AllTypesEntity.class)
             .map("Id", SqlServerTypes.UNIQUEIDENTIFIER.from(AllTypesEntity::id))
 
@@ -153,22 +150,18 @@ public class SqlServerBulkInsertAllTypesTest {
         }
     }
 
-    // =========================================================================
-    // 4. DER EIGENTLICHE TEST
-    // =========================================================================
     @Test
     public void testSuccessfulBulkInsertOfAllSupportedTypes() throws Exception {
         // Arrange
         List<AllTypesEntity> testData = new ArrayList<>();
         UUID testId = UUID.randomUUID();
 
-        // Konstante Zeiten für exakte Vergleiche (Sekunden/Minuten abgeschnitten wg. SmallDateTime/DateTime Limitierungen)
         LocalDate date = LocalDate.of(2026, 3, 18);
         LocalTime time = LocalTime.of(13, 15, 0);
         LocalDateTime dateTime = LocalDateTime.of(date, time);
         OffsetDateTime offsetDateTime = OffsetDateTime.of(dateTime, ZoneOffset.ofHours(2));
 
-        String maxString = "MAX".repeat(2000); // 6000 Zeichen, testet LOB Verhalten
+        String maxString = "MAX".repeat(2000);
         byte[] binaryData = new byte[] { 0x01, 0x02, 0x03 };
 
         testData.add(new AllTypesEntity(
@@ -182,11 +175,11 @@ public class SqlServerBulkInsertAllTypesTest {
                 2.718281828459,
                 new BigDecimal("12345.67890"),
                 new BigDecimal("98765.43210"),
-                new BigDecimal("123.4567"), // Money max 4 decimals
-                new BigDecimal("12.3456"),  // SmallMoney max 4 decimals
-                "ABC       ", // Char füllt mit Spaces auf
+                new BigDecimal("123.4567"),
+                new BigDecimal("12.3456"),
+                "ABC       ",
                 "Varchar Test",
-                "XYZ       ", // NChar füllt auf
+                "XYZ       ",
                 "NVarchar Unicode: 🚀",
                 maxString,
                 maxString,
@@ -210,14 +203,14 @@ public class SqlServerBulkInsertAllTypesTest {
             BulkInsertResult result = writer.saveAll(conn, "dbo", "AllTypesTable", testData);
 
             // Assert
-            assertTrue(result.success(), "Bulk Insert sollte fehlerfrei durchlaufen.");
-            assertEquals(1, result.rowsAffected(), "Es sollte exakt eine Zeile geschrieben werden.");
+            assertTrue(result.success(), "Bulk Insert needs to be successful.");
+            assertEquals(1, result.rowsAffected(), "Only one row is expected.");
 
             // Verify Data via Standard JDBC
             try (Statement stmt = conn.createStatement();
                  ResultSet rs = stmt.executeQuery("SELECT * FROM dbo.AllTypesTable WHERE Id = '" + testId + "'")) {
 
-                assertTrue(rs.next(), "Der Datensatz muss in der DB vorhanden sein.");
+                assertTrue(rs.next(), "There has to be data in the dataset.");
 
                 assertEquals(true, rs.getBoolean("BitVal"));
                 assertEquals((short) 255, rs.getShort("TinyIntVal"));
@@ -245,8 +238,6 @@ public class SqlServerBulkInsertAllTypesTest {
                 assertEquals(java.sql.Time.valueOf(time), rs.getTime("TimeVal"));
                 assertEquals(java.sql.Timestamp.valueOf(dateTime), rs.getTimestamp("DateTime2Val"));
 
-                // OffsetDateTime ist im JDBC-Treiber von SQL Server eine eigene Klasse "microsoft.sql.DateTimeOffset"
-                // Die String Repräsentation reicht uns hier oft zur Bestätigung.
                 assertNotNull(rs.getObject("DateTimeOffsetVal"));
                 assertTrue(rs.getString("DateTimeOffsetVal").startsWith(date.toString()));
             }

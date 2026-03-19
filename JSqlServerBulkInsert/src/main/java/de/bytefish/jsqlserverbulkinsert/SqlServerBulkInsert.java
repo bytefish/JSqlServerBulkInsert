@@ -1,18 +1,13 @@
-// Copyright (c) Philipp Wagner and Victor Lee. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 package de.bytefish.jsqlserverbulkinsert;
 
-import com.microsoft.sqlserver.jdbc.ISQLServerBulkRecord;
-import com.microsoft.sqlserver.jdbc.SQLServerBulkCopy;
-import com.microsoft.sqlserver.jdbc.SQLServerBulkCopyOptions;
-import com.microsoft.sqlserver.jdbc.SQLServerConnection;
-import com.microsoft.sqlserver.jdbc.SQLServerException;
+import com.microsoft.sqlserver.jdbc.*;
 
 import java.sql.Connection;
+import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.*;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.function.*;
 
@@ -99,7 +94,7 @@ public class SqlServerBulkInsert {
     }
 
     public static class SqlServerShortType extends SqlServerType<Short> {
-        public SqlServerShortType(int jdbcType) { super(jdbcType); }
+        public SqlServerShortType(int jdbcType, int p) { super(jdbcType, p, 0); }
         public <TEntity> ColumnBinding<TEntity> primitive(ToShortFunction<TEntity> extractor) {
             return new ColumnBinding<>(jdbcType, precision, scale, entity -> extractor.applyAsShort(entity));
         }
@@ -107,7 +102,7 @@ public class SqlServerBulkInsert {
 
     public static class SqlServerIntType extends SqlServerType<Integer> {
         public SqlServerIntType(int jdbcType) {
-            super(jdbcType);
+            super(jdbcType, 10, 0);
         }
 
         public <TEntity> ColumnBinding<TEntity> primitive(ToIntFunction<TEntity> extractor) {
@@ -117,14 +112,13 @@ public class SqlServerBulkInsert {
 
     public static class SqlServerLongType extends SqlServerType<Long> {
         public SqlServerLongType(int jdbcType) {
-            super(jdbcType);
+            super(jdbcType, 19, 0);
         }
 
         public <TEntity> ColumnBinding<TEntity> primitive(ToLongFunction<TEntity> extractor) {
             return new ColumnBinding<>(jdbcType, precision, scale, entity -> extractor.applyAsLong(entity));
         }
     }
-
 
     public static class SqlServerFloatType extends SqlServerType<Float> {
         public SqlServerFloatType(int jdbcType) { super(jdbcType); }
@@ -134,7 +128,7 @@ public class SqlServerBulkInsert {
     }
 
     public static class SqlServerDoubleType extends SqlServerType<Double> {
-        public SqlServerDoubleType(int jdbcType) { super(jdbcType); }
+        public SqlServerDoubleType(int jdbcType) { super(jdbcType, 53, 0); }
         public <TEntity> ColumnBinding<TEntity> primitive(ToDoubleFunction<TEntity> extractor) {
             return new ColumnBinding<>(jdbcType, precision, scale, entity -> extractor.applyAsDouble(entity));
         }
@@ -153,10 +147,9 @@ public class SqlServerBulkInsert {
         }
     }
 
-
     public static class SqlServerStringType extends SqlServerType<String> {
-        public SqlServerStringType(int jdbcType) {
-            super(jdbcType);
+        public SqlServerStringType(int jdbcType, int p) {
+            super(jdbcType, p, 0);
         }
 
         private SqlServerStringType(int jdbcType, int precision, int scale) {
@@ -169,8 +162,8 @@ public class SqlServerBulkInsert {
     }
 
     public static class SqlServerBinaryType extends SqlServerType<byte[]> {
-        public SqlServerBinaryType(int jdbcType) {
-            super(jdbcType);
+        public SqlServerBinaryType(int jdbcType, int p) {
+            super(jdbcType, p, 0);
         }
 
         private SqlServerBinaryType(int jdbcType, int precision, int scale) {
@@ -183,7 +176,7 @@ public class SqlServerBulkInsert {
     }
 
     public static class SqlServerDateType extends SqlServerType<LocalDate> {
-        public SqlServerDateType(int jdbcType) { super(jdbcType); }
+        public SqlServerDateType(int jdbcType) { super(jdbcType, 10, 0);  }
 
         public <TEntity> ColumnBinding<TEntity> localDate(Function<TEntity, LocalDate> extractor) {
             return from(extractor);
@@ -191,7 +184,7 @@ public class SqlServerBulkInsert {
     }
 
     public static class SqlServerTimeType extends SqlServerType<LocalTime> {
-        public SqlServerTimeType(int jdbcType) { super(jdbcType); }
+        public SqlServerTimeType(int jdbcType) { super(jdbcType, 16, 7);  }
 
         public <TEntity> ColumnBinding<TEntity> localTime(Function<TEntity, LocalTime> extractor) {
             return from(extractor);
@@ -199,8 +192,8 @@ public class SqlServerBulkInsert {
     }
 
     public static class SqlServerDateTimeType extends SqlServerType<LocalDateTime> {
-        public SqlServerDateTimeType(int jdbcType) {
-            super(jdbcType);
+        public SqlServerDateTimeType(int jdbcType, int p, int s) {
+            super(jdbcType,  p, s);
         }
 
         public <TEntity> ColumnBinding<TEntity> localDateTime(Function<TEntity, LocalDateTime> extractor) {
@@ -210,24 +203,29 @@ public class SqlServerBulkInsert {
         public <TEntity> ColumnBinding<TEntity> instant(Function<TEntity, Instant> extractor) {
             return new ColumnBinding<>(jdbcType, precision, scale, e -> {
                 Instant val = extractor.apply(e);
+
                 return val == null ? null : LocalDateTime.ofInstant(val, ZoneOffset.UTC);
             });
         }
     }
 
     public static class SqlServerDateTimeOffsetType extends SqlServerType<OffsetDateTime> {
-        public SqlServerDateTimeOffsetType(int jdbcType) {
-            super(jdbcType);
-        }
-
+        public SqlServerDateTimeOffsetType(int jdbcType, int precision, int scale) { super(jdbcType, precision, scale); }
         public <TEntity> ColumnBinding<TEntity> offsetDateTime(Function<TEntity, OffsetDateTime> extractor) {
-            return from(extractor);
+            return new ColumnBinding<>(jdbcType, precision, scale, e -> {
+                OffsetDateTime odt = extractor.apply(e);
+                if (odt == null) {
+                    return null;
+                }
+
+                return microsoft.sql.DateTimeOffset.valueOf(Timestamp.from(odt.toInstant()), odt.getOffset().getTotalSeconds() / 60);
+            });
         }
 
         public <TEntity> ColumnBinding<TEntity> instant(Function<TEntity, Instant> extractor) {
-            return new ColumnBinding<>(jdbcType, precision, scale, e -> {
-                Instant val = extractor.apply(e);
-                return val == null ? null : val.atOffset(ZoneOffset.UTC);
+            return offsetDateTime(e -> {
+                Instant i = extractor.apply(e);
+                return i == null ? null : i.atOffset(ZoneOffset.UTC);
             });
         }
     }
@@ -240,6 +238,7 @@ public class SqlServerBulkInsert {
     }
 
     public static class SqlServerTypes {
+
         private SqlServerTypes() {
         }
 
@@ -247,45 +246,41 @@ public class SqlServerBulkInsert {
 
         // Primitives & Numbers
         public static final SqlServerBooleanType BIT = new SqlServerBooleanType(Types.BIT);
-        public static final SqlServerShortType TINYINT = new SqlServerShortType(Types.TINYINT);
-        public static final SqlServerShortType SMALLINT = new SqlServerShortType(Types.SMALLINT);
+        public static final SqlServerShortType TINYINT = new SqlServerShortType(Types.TINYINT, 3);
+        public static final SqlServerShortType SMALLINT = new SqlServerShortType(Types.SMALLINT, 5);
         public static final SqlServerIntType INT = new SqlServerIntType(Types.INTEGER);
         public static final SqlServerLongType BIGINT = new SqlServerLongType(Types.BIGINT);
         public static final SqlServerFloatType REAL = new SqlServerFloatType(Types.REAL);
-        public static final SqlServerDoubleType FLOAT = new SqlServerDoubleType(Types.FLOAT); // SQL Server FLOAT is Double
+        public static final SqlServerDoubleType FLOAT = new SqlServerDoubleType(Types.DOUBLE);
 
         // Decimals & Money
-        public static final SqlServerBigDecimalType NUMERIC = new SqlServerBigDecimalType(Types.NUMERIC);
-        public static final SqlServerBigDecimalType DECIMAL = new SqlServerBigDecimalType(Types.DECIMAL);
-        public static final SqlServerBigDecimalType MONEY = new SqlServerBigDecimalType(Types.DECIMAL);
-        public static final SqlServerBigDecimalType SMALLMONEY = new SqlServerBigDecimalType(Types.DECIMAL);
+        public static final SqlServerBigDecimalType NUMERIC = new SqlServerBigDecimalType(Types.NUMERIC, 38, 10);
+        public static final SqlServerBigDecimalType DECIMAL = new SqlServerBigDecimalType(Types.DECIMAL, 38, 10);
+        public static final SqlServerBigDecimalType MONEY = new SqlServerBigDecimalType(Types.DECIMAL, 19, 4);
+        public static final SqlServerBigDecimalType SMALLMONEY = new SqlServerBigDecimalType(Types.DECIMAL, 10, 4);
 
         // Strings
-        public static final SqlServerStringType CHAR = new SqlServerStringType(Types.CHAR);
-        public static final SqlServerStringType VARCHAR = new SqlServerStringType(Types.VARCHAR);
-        public static final SqlServerStringType NCHAR = new SqlServerStringType(Types.NCHAR);
-        public static final SqlServerStringType NVARCHAR = new SqlServerStringType(Types.NVARCHAR);
+        public static final SqlServerStringType CHAR = new SqlServerStringType(Types.CHAR, 8000);
+        public static final SqlServerStringType VARCHAR = new SqlServerStringType(Types.VARCHAR, 8000);
+        public static final SqlServerStringType NCHAR = new SqlServerStringType(Types.NCHAR, 4000);
+        public static final SqlServerStringType NVARCHAR = new SqlServerStringType(Types.NVARCHAR, 4000);
 
         // Binaries
-        public static final SqlServerBinaryType VARBINARY = new SqlServerBinaryType(Types.VARBINARY);
+        public static final SqlServerBinaryType VARBINARY = new SqlServerBinaryType(Types.VARBINARY, 8000);
 
         // Unique Identifier
-        public static final SqlServerType<UUID> UNIQUEIDENTIFIER = new SqlServerType<>(microsoft.sql.Types.GUID);
+        public static final SqlServerType<UUID> UNIQUEIDENTIFIER = new SqlServerType<>(microsoft.sql.Types.GUID, 36, 0);
 
         // Dates & Times
         public static final SqlServerDateType DATE = new SqlServerDateType(Types.DATE);
         public static final SqlServerTimeType TIME = new SqlServerTimeType(Types.TIME);
-        public static final SqlServerDateTimeType DATETIME = new SqlServerDateTimeType(Types.TIMESTAMP);
-        public static final SqlServerDateTimeType DATETIME2 = new SqlServerDateTimeType(Types.TIMESTAMP);
-        public static final SqlServerDateTimeType SMALLDATETIME = new SqlServerDateTimeType(Types.TIMESTAMP);
-        public static final SqlServerDateTimeOffsetType DATETIMEOFFSET = new SqlServerDateTimeOffsetType(microsoft.sql.Types.DATETIMEOFFSET);
+        public static final SqlServerDateTimeType DATETIME = new SqlServerDateTimeType(Types.TIMESTAMP, 23, 3);
+        public static final SqlServerDateTimeType DATETIME2 = new SqlServerDateTimeType(Types.TIMESTAMP, 27, 7);
+        public static final SqlServerDateTimeType SMALLDATETIME = new SqlServerDateTimeType(Types.TIMESTAMP, 16, 0);
+        public static final SqlServerDateTimeOffsetType DATETIMEOFFSET = new SqlServerDateTimeOffsetType(microsoft.sql.Types.DATETIMEOFFSET, 34, 7);
     }
 
-// =========================================================================
-// 5. THE MAPPER
-// =========================================================================
-
-    public static class SqlServerMapper<TEntity> {
+   public static class SqlServerMapper<TEntity> {
 
         static class MappedColumn<T> {
             final String columnName;
@@ -316,7 +311,7 @@ public class SqlServerBulkInsert {
         }
     }
 
-    public static class SqlServerBulkRecordAdapter<TEntity> implements ISQLServerBulkRecord {
+    static class SqlServerBulkDataAdapter<TEntity> implements ISQLServerBulkData {
         private final List<SqlServerMapper.MappedColumn<TEntity>> columns;
         private final Iterator<TEntity> iterator;
         private final Set<Integer> ordinals;
@@ -326,44 +321,27 @@ public class SqlServerBulkInsert {
         private TEntity current;
         private long counter = 0;
 
-        SqlServerBulkRecordAdapter(SqlServerMapper<TEntity> mapper, Iterator<TEntity> iterator, int notifyAfter, BulkProgressListener listener) {
+        SqlServerBulkDataAdapter(SqlServerMapper<TEntity> mapper, Iterator<TEntity> iterator, int notifyAfter, BulkProgressListener listener) {
             this.columns = mapper.getColumns();
             this.iterator = iterator;
             this.notifyAfter = notifyAfter;
             this.progressListener = listener;
-            this.ordinals = new HashSet<>();
+            this.ordinals = new LinkedHashSet<>();
+
             for (int i = 1; i <= columns.size(); i++) ordinals.add(i);
+
         }
 
-        @Override
-        public Set<Integer> getColumnOrdinals() {
-            return ordinals;
+        @Override public Set<Integer> getColumnOrdinals() { return ordinals; }
+        @Override public String getColumnName(int c) {
+            String name = columns.get(c - 1).columnName;
+
+            return name.startsWith("[") && name.endsWith("]") ? name : "[" + name + "]";
         }
 
-        @Override
-        public String getColumnName(int c) {
-            return columns.get(c - 1).columnName;
-        }
-
-        @Override
-        public int getColumnType(int c) {
-            return columns.get(c - 1).binding.getJdbcType();
-        }
-
-        @Override
-        public int getPrecision(int c) {
-            return columns.get(c - 1).binding.getPrecision();
-        }
-
-        @Override
-        public int getScale(int c) {
-            return columns.get(c - 1).binding.getScale();
-        }
-
-        @Override
-        public boolean isAutoIncrement(int c) {
-            return false;
-        }
+        @Override public int getColumnType(int c) { return columns.get(c - 1).binding.getJdbcType(); }
+        @Override public int getPrecision(int c) { return columns.get(c - 1).binding.getPrecision(); }
+        @Override public int getScale(int c) { return columns.get(c - 1).binding.getScale(); }
 
         @Override
         public Object[] getRowData() throws SQLServerException {
@@ -372,41 +350,6 @@ public class SqlServerBulkInsert {
                 data[i] = columns.get(i).binding.getExtractor().apply(current);
             }
             return data;
-        }
-
-        @Override
-        public void addColumnMetadata(int positionInSource, String name, int jdbcType, int precision, int scale, DateTimeFormatter dateTimeFormatter) {
-            // Doesn't need to be implemented
-        }
-
-        @Override
-        public void addColumnMetadata(int positionInSource, String name, int jdbcType, int precision, int scale) {
-            // Doesn't need to be implemented
-        }
-
-        @Override
-        public void setTimestampWithTimezoneFormat(String s) {
-
-        }
-
-        @Override
-        public void setTimestampWithTimezoneFormat(DateTimeFormatter dateTimeFormatter) {
-
-        }
-
-        @Override
-        public void setTimeWithTimezoneFormat(String s) {
-
-        }
-
-        @Override
-        public void setTimeWithTimezoneFormat(DateTimeFormatter dateTimeFormatter) {
-
-        }
-
-        @Override
-        public DateTimeFormatter getColumnDateTimeFormatter(int i) {
-            return null;
         }
 
         @Override
@@ -422,9 +365,7 @@ public class SqlServerBulkInsert {
             return false;
         }
 
-        public long getRowsProcessed() {
-            return counter;
-        }
+        public long getRowsProcessed() { return counter; }
     }
 
     public static class SqlServerBulkWriter<TEntity> {
@@ -435,8 +376,7 @@ public class SqlServerBulkInsert {
         private boolean checkConstraints = true;
         private int notifyAfter = 0;
         private BulkProgressListener progressListener = null;
-        private BulkErrorHandler errorHandler = e -> {
-        };
+        private BulkErrorHandler errorHandler = e -> {};
 
         public SqlServerBulkWriter(SqlServerMapper<TEntity> mapper) {
             this.mapper = mapper;
@@ -478,16 +418,24 @@ public class SqlServerBulkInsert {
                     options.setCheckConstraints(checkConstraints);
 
                     bulkCopy.setBulkCopyOptions(options);
-                    bulkCopy.setDestinationTableName("[" + schemaName + "].[" + tableName + "]");
+
+                    String safeSchema = schemaName.startsWith("[") && schemaName.endsWith("]") ? schemaName : "[" + schemaName + "]";
+                    String safeTable = tableName.startsWith("[") && tableName.endsWith("]") ? tableName : "[" + tableName + "]";
+                    bulkCopy.setDestinationTableName(safeSchema + "." + safeTable);
 
                     for (var column : mapper.getColumns()) {
-                        bulkCopy.addColumnMapping(column.columnName, column.columnName);
+                        String safeName = column.columnName.startsWith("[") && column.columnName.endsWith("]")
+                                ? column.columnName
+                                : "[" + column.columnName + "]";
+
+                        bulkCopy.addColumnMapping(safeName, column.columnName);
                     }
 
-                    SqlServerBulkRecordAdapter<TEntity> adapter = new SqlServerBulkRecordAdapter<>(
+                    SqlServerBulkDataAdapter<TEntity> adapter = new SqlServerBulkDataAdapter<>(
                             mapper, entities.iterator(), notifyAfter, progressListener);
 
                     bulkCopy.writeToServer(adapter);
+
                     return BulkInsertResult.ok(adapter.getRowsProcessed());
                 }
             } catch (Exception e) {
