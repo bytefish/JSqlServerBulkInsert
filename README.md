@@ -10,7 +10,7 @@ It provides an elegant, functional wrapper around the SQL Server Bulk Copy funct
 
 ## Setup ##
 
-JSqlServerBulkInsert is designed for Java 17+ and the Microsoft JDBC Driver for SQL Server (version 8.1.0 or higher).
+JSqlServerBulkInsert is designed for Java 17+ and the Microsoft JDBC Driver for SQL Server (version 12.6.5.jre11 or higher).
 
 Add the following dependency to your pom.xml:
 
